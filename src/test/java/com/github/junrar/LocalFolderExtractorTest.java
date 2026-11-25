@@ -5,6 +5,8 @@ import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 import java.io.File;
 import java.io.IOException;
@@ -86,6 +88,46 @@ public class LocalFolderExtractorTest {
                 .containsIgnoringCase("Rar contains file with invalid path")
                 .containsIgnoringCase(expectedInvalidPath.toString());
         }
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    public void rarWithFileOutsideTarget_ShouldThrowException3() throws Exception {
+        File file = TestCommons.writeResourceToFolder(tempFolder, "sibling-prefix-traversal.rar");
+
+        File tempDir = new File("/tmp/extract");
+        LocalFolderExtractor localFolderExtractor = new LocalFolderExtractor(tempDir);
+
+        try (Archive archive = new Archive(file)) {
+            FileHeader fileHeader = archive.nextFileHeader();
+
+            String expectedInvalidPath = "/tmp/extract_evil/pwned.txt";
+            Throwable thrown = catchThrowable(() -> localFolderExtractor.extract(archive, fileHeader));
+
+            assertThat(thrown).isInstanceOf(IllegalStateException.class);
+            assertThat(thrown.getMessage())
+                .containsIgnoringCase("Rar contains file with invalid path")
+                .containsIgnoringCase(expectedInvalidPath);
+        }
+    }
+
+    @Test
+    public void rarWithDirectoryInSiblingPrefixFolder_ShouldThrowException() throws IOException {
+        File destination = new File(TestCommons.createTempDir(), "extract");
+        LocalFolderExtractor localFolderExtractor = new LocalFolderExtractor(destination);
+
+        FileHeader fileHeader = mock(FileHeader.class);
+        when(fileHeader.isDirectory()).thenReturn(true);
+        when(fileHeader.isUnicode()).thenReturn(true);
+        when(fileHeader.getFileName()).thenReturn("../extract_evil/");
+
+        File expectedInvalidPath = new File(destination.getParentFile(), "extract_evil");
+        Throwable thrown = catchThrowable(() -> localFolderExtractor.createDirectory(fileHeader));
+
+        assertThat(thrown).isInstanceOf(IllegalStateException.class);
+        assertThat(thrown.getMessage())
+            .containsIgnoringCase("Rar contains invalid path")
+            .containsIgnoringCase(expectedInvalidPath.toString());
     }
 
     @Test
